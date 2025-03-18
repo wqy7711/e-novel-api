@@ -1,0 +1,46 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "definitions": {
+        "ENovel": {
+            "additionalProperties": false,
+            "properties": {
+                "authorId": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "genre": {
+                    "type": "string"
+                },
+                "novelId": {
+                    "type": "string"
+                },
+                "pageCount": {
+                    "type": "number"
+                },
+                "published": {
+                    "type": "boolean"
+                },
+                "rating": {
+                    "type": "number"
+                },
+                "title": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "authorId",
+                "description",
+                "genre",
+                "novelId",
+                "pageCount",
+                "published",
+                "rating",
+                "title"
+            ],
+            "type": "object"
+        }
+    }
+}
+
