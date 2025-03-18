@@ -4,7 +4,7 @@
         "ENovel": {
             "additionalProperties": false,
             "properties": {
-                "authorId": {
+                "author": {
                     "type": "string"
                 },
                 "description": {
@@ -30,7 +30,7 @@
                 }
             },
             "required": [
-                "authorId",
+                "author",
                 "description",
                 "genre",
                 "novelId",
