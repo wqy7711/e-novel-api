@@ -4,6 +4,7 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as custom from "aws-cdk-lib/custom-resources";
 import * as apig from "aws-cdk-lib/aws-apigateway";
+import * as iam from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
 import { generateBatch } from "../shared/util";
 import { novels } from "../seed/novels";
@@ -69,10 +70,47 @@ export class ENovelApiStack extends cdk.Stack {
       }
     );
 
+    const updateNovelFn = new lambdanode.NodejsFunction(
+      this,
+      "UpdateNovelFn",
+      {
+        architecture: lambda.Architecture.ARM_64,
+        runtime: lambda.Runtime.NODEJS_18_X,
+        entry: `${__dirname}/../lambdas/updateNovel.ts`,
+        timeout: cdk.Duration.seconds(10),
+        memorySize: 128,
+        environment: {
+          TABLE_NAME: eNovelsTable.tableName,
+          REGION: 'eu-west-1',
+        },
+      }
+    );
+
+    const translateNovelFn = new lambdanode.NodejsFunction(
+      this,
+      "TranslateNovelFn",
+      {
+        architecture: lambda.Architecture.ARM_64,
+        runtime: lambda.Runtime.NODEJS_18_X,
+        entry: `${__dirname}/../lambdas/translateNovel.ts`,
+        timeout: cdk.Duration.seconds(10),
+        memorySize: 128,
+        environment: {
+          TABLE_NAME: eNovelsTable.tableName,
+          REGION: 'eu-west-1',
+        },
+      }
+    );
+
     // Permissions
     eNovelsTable.grantReadData(getAllNovelsFn);
     eNovelsTable.grantReadData(getNovelByIdFn);
     eNovelsTable.grantReadWriteData(addNovelFn);
+    eNovelsTable.grantReadWriteData(updateNovelFn);
+    eNovelsTable.grantReadData(translateNovelFn);
+    translateNovelFn.role?.addManagedPolicy(
+      iam.ManagedPolicy.fromAwsManagedPolicyName("TranslateReadOnly")
+    );
 
     // REST API
     const api = new apig.RestApi(this, "ENovelRestAPI", {
@@ -109,6 +147,19 @@ export class ENovelApiStack extends cdk.Stack {
       "GET",
       new apig.LambdaIntegration(getNovelByIdFn, { proxy: true })
     );
+
+    // Update a novel
+    novelByIdEndpoint.addMethod(
+      "PUT",
+      new apig.LambdaIntegration(updateNovelFn, { proxy: true })
+    );
+
+    // Get novel with specified fields translated to the requested language
+    const translationEndpoint = novelByIdEndpoint.addResource("translation");
+    translationEndpoint.addMethod(
+      "GET",
+      new apig.LambdaIntegration(translateNovelFn, { proxy: true })
+    );
     
     // Seed the database
     new custom.AwsCustomResource(this, "enovelsddbInitData", {
@@ -126,5 +177,11 @@ export class ENovelApiStack extends cdk.Stack {
         resources: [eNovelsTable.tableArn],
       }),
     });
+
+    new cdk.CfnOutput(this, "ApiUrl", {
+      value: api.url,
+      description: "The URL of the deployed API",
+    });
+    
   }
 }
