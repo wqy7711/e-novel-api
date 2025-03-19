@@ -21,6 +21,15 @@ export class ENovelApiStack extends cdk.Stack {
       tableName: "ENovels",
     });
 
+    const translationsTable = new dynamodb.Table(this, "TranslationsTable", {
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      partitionKey: { name: "novelId", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "translationKey", type: dynamodb.AttributeType.STRING },
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      tableName: "ENovelTranslations",
+      timeToLiveAttribute: "ttl",
+    });
+
     // Lambda Functions
     const getAllNovelsFn = new lambdanode.NodejsFunction(
       this,
@@ -97,6 +106,7 @@ export class ENovelApiStack extends cdk.Stack {
         memorySize: 128,
         environment: {
           TABLE_NAME: eNovelsTable.tableName,
+          TRANSLATIONS_TABLE_NAME: translationsTable.tableName,
           REGION: 'eu-west-1',
         },
       }
@@ -108,6 +118,7 @@ export class ENovelApiStack extends cdk.Stack {
     eNovelsTable.grantReadWriteData(addNovelFn);
     eNovelsTable.grantReadWriteData(updateNovelFn);
     eNovelsTable.grantReadData(translateNovelFn);
+    translationsTable.grantReadWriteData(translateNovelFn);
     translateNovelFn.role?.addManagedPolicy(
       iam.ManagedPolicy.fromAwsManagedPolicyName("TranslateReadOnly")
     );
