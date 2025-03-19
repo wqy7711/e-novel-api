@@ -119,12 +119,38 @@ export class ENovelApiStack extends cdk.Stack {
         stageName: "dev",
       },
       defaultCorsPreflightOptions: {
-        allowHeaders: ["Content-Type", "X-Amz-Date"],
+        allowHeaders: ["Content-Type", "X-Amz-Date", "x-api-key"],
         allowMethods: ["OPTIONS", "GET", "POST", "PUT", "PATCH", "DELETE"],
         allowCredentials: true,
         allowOrigins: ["*"],
       },
     });
+
+    // API key
+    const apiKey = new apig.ApiKey(this, "ENovelsApiKey", {
+      apiKeyName: "e-novels-api-key",
+      description: "API Key for E-Novel API protected endpoints",
+    });
+
+    // Usage plan
+    const usagePlan = new apig.UsagePlan(this, "ENovelsUsagePlan", {
+      name: "ENovelsUsagePlan",
+      apiStages: [
+        {
+          api,
+          stage: api.deploymentStage,
+        },
+      ],
+      throttle: {
+        rateLimit: 10,
+        burstLimit: 20,
+      },
+      quota: {
+        limit: 1000,
+        period: apig.Period.MONTH,
+      },
+    });
+    usagePlan.addApiKey(apiKey);
 
     // API Endpoints
     const novelsEndpoint = api.root.addResource("novels");
@@ -138,7 +164,10 @@ export class ENovelApiStack extends cdk.Stack {
     // Add a new novel
     novelsEndpoint.addMethod(
       "POST",
-      new apig.LambdaIntegration(addNovelFn, { proxy: true })
+      new apig.LambdaIntegration(addNovelFn, { proxy: true }),
+      {
+        apiKeyRequired: true,
+      }
     );
     
     // Get a novel by ID
@@ -151,7 +180,10 @@ export class ENovelApiStack extends cdk.Stack {
     // Update a novel
     novelByIdEndpoint.addMethod(
       "PUT",
-      new apig.LambdaIntegration(updateNovelFn, { proxy: true })
+      new apig.LambdaIntegration(updateNovelFn, { proxy: true }),
+      {
+        apiKeyRequired: true,
+      }
     );
 
     // Get novel with specified fields translated to the requested language
@@ -181,6 +213,11 @@ export class ENovelApiStack extends cdk.Stack {
     new cdk.CfnOutput(this, "ApiUrl", {
       value: api.url,
       description: "The URL of the deployed API",
+    });
+
+    new cdk.CfnOutput(this, "ApiKeyValue", {
+      value: apiKey.keyId,
+      description: "API Key ID",
     });
     
   }
