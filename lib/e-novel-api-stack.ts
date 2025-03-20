@@ -1,11 +1,8 @@
 import * as cdk from "aws-cdk-lib";
-import * as lambdanode from "aws-cdk-lib/aws-lambda-nodejs";
-import * as lambda from "aws-cdk-lib/aws-lambda";
-import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as apigw from "aws-cdk-lib/aws-apigateway";
 import * as custom from "aws-cdk-lib/custom-resources";
-import * as apig from "aws-cdk-lib/aws-apigateway";
-import * as iam from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
+import { NovelApiConstruct } from "./constructs/novel-api-construct";
 import { generateBatch } from "../shared/util";
 import { novels } from "../seed/novels";
 
@@ -13,118 +10,8 @@ export class ENovelApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // DynamoDB Table
-    const eNovelsTable = new dynamodb.Table(this, "ENovelsTable", {
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      partitionKey: { name: "novelId", type: dynamodb.AttributeType.STRING },
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-      tableName: "ENovels",
-    });
-
-    const translationsTable = new dynamodb.Table(this, "TranslationsTable", {
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      partitionKey: { name: "novelId", type: dynamodb.AttributeType.STRING },
-      sortKey: { name: "translationKey", type: dynamodb.AttributeType.STRING },
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-      tableName: "ENovelTranslations",
-      timeToLiveAttribute: "ttl",
-    });
-
-    // Lambda Functions
-    const getAllNovelsFn = new lambdanode.NodejsFunction(
-      this,
-      "GetAllNovelsFn",
-      {
-        architecture: lambda.Architecture.ARM_64,
-        runtime: lambda.Runtime.NODEJS_18_X,
-        entry: `${__dirname}/../lambdas/getAllNovels.ts`,
-        timeout: cdk.Duration.seconds(10),
-        memorySize: 128,
-        environment: {
-          TABLE_NAME: eNovelsTable.tableName,
-          REGION: 'eu-west-1',
-        },
-      }
-    );
-    
-    const getNovelByIdFn = new lambdanode.NodejsFunction(
-      this,
-      "GetNovelByIdFn",
-      {
-        architecture: lambda.Architecture.ARM_64,
-        runtime: lambda.Runtime.NODEJS_18_X,
-        entry: `${__dirname}/../lambdas/getNovelById.ts`,
-        timeout: cdk.Duration.seconds(10),
-        memorySize: 128,
-        environment: {
-          TABLE_NAME: eNovelsTable.tableName,
-          REGION: 'eu-west-1',
-        },
-      }
-    );
-    
-    const addNovelFn = new lambdanode.NodejsFunction(
-      this,
-      "AddNovelFn",
-      {
-        architecture: lambda.Architecture.ARM_64,
-        runtime: lambda.Runtime.NODEJS_18_X,
-        entry: `${__dirname}/../lambdas/addNovel.ts`,
-        timeout: cdk.Duration.seconds(10),
-        memorySize: 128,
-        environment: {
-          TABLE_NAME: eNovelsTable.tableName,
-          REGION: 'eu-west-1',
-        },
-      }
-    );
-
-    const updateNovelFn = new lambdanode.NodejsFunction(
-      this,
-      "UpdateNovelFn",
-      {
-        architecture: lambda.Architecture.ARM_64,
-        runtime: lambda.Runtime.NODEJS_18_X,
-        entry: `${__dirname}/../lambdas/updateNovel.ts`,
-        timeout: cdk.Duration.seconds(10),
-        memorySize: 128,
-        environment: {
-          TABLE_NAME: eNovelsTable.tableName,
-          REGION: 'eu-west-1',
-        },
-      }
-    );
-
-    const translateNovelFn = new lambdanode.NodejsFunction(
-      this,
-      "TranslateNovelFn",
-      {
-        architecture: lambda.Architecture.ARM_64,
-        runtime: lambda.Runtime.NODEJS_18_X,
-        entry: `${__dirname}/../lambdas/translateNovel.ts`,
-        timeout: cdk.Duration.seconds(10),
-        memorySize: 128,
-        environment: {
-          TABLE_NAME: eNovelsTable.tableName,
-          TRANSLATIONS_TABLE_NAME: translationsTable.tableName,
-          REGION: 'eu-west-1',
-        },
-      }
-    );
-
-    // Permissions
-    eNovelsTable.grantReadData(getAllNovelsFn);
-    eNovelsTable.grantReadData(getNovelByIdFn);
-    eNovelsTable.grantReadWriteData(addNovelFn);
-    eNovelsTable.grantReadWriteData(updateNovelFn);
-    eNovelsTable.grantReadData(translateNovelFn);
-    translationsTable.grantReadWriteData(translateNovelFn);
-    translateNovelFn.role?.addManagedPolicy(
-      iam.ManagedPolicy.fromAwsManagedPolicyName("TranslateReadOnly")
-    );
-
-    // REST API
-    const api = new apig.RestApi(this, "ENovelRestAPI", {
+    // API Gateway
+    const api = new apigw.RestApi(this, "ENovelRestAPI", {
       description: "E-Novel API",
       deployOptions: {
         stageName: "dev",
@@ -137,14 +24,14 @@ export class ENovelApiStack extends cdk.Stack {
       },
     });
 
-    // API key
-    const apiKey = new apig.ApiKey(this, "ENovelsApiKey", {
+    // API Key
+    const apiKey = new apigw.ApiKey(this, "ENovelsApiKey", {
       apiKeyName: "e-novels-api-key",
       description: "API Key for E-Novel API protected endpoints",
     });
 
     // Usage plan
-    const usagePlan = new apig.UsagePlan(this, "ENovelsUsagePlan", {
+    const usagePlan = new apigw.UsagePlan(this, "ENovelsUsagePlan", {
       name: "ENovelsUsagePlan",
       apiStages: [
         {
@@ -158,52 +45,18 @@ export class ENovelApiStack extends cdk.Stack {
       },
       quota: {
         limit: 1000,
-        period: apig.Period.MONTH,
+        period: apigw.Period.MONTH,
       },
     });
+
     usagePlan.addApiKey(apiKey);
 
-    // API Endpoints
-    const novelsEndpoint = api.root.addResource("novels");
-    
-    // Get all novels
-    novelsEndpoint.addMethod(
-      "GET",
-      new apig.LambdaIntegration(getAllNovelsFn, { proxy: true })
-    );
-    
-    // Add a new novel
-    novelsEndpoint.addMethod(
-      "POST",
-      new apig.LambdaIntegration(addNovelFn, { proxy: true }),
-      {
-        apiKeyRequired: true,
-      }
-    );
-    
-    // Get a novel by ID
-    const novelByIdEndpoint = novelsEndpoint.addResource("{novelId}");
-    novelByIdEndpoint.addMethod(
-      "GET",
-      new apig.LambdaIntegration(getNovelByIdFn, { proxy: true })
-    );
+    const novelApi = new NovelApiConstruct(this, "NovelApi", {
+      apiGateway: api,
+      apiKey: apiKey,
+      apiUsagePlan: usagePlan,
+    });
 
-    // Update a novel
-    novelByIdEndpoint.addMethod(
-      "PUT",
-      new apig.LambdaIntegration(updateNovelFn, { proxy: true }),
-      {
-        apiKeyRequired: true,
-      }
-    );
-
-    // Get novel with specified fields translated to the requested language
-    const translationEndpoint = novelByIdEndpoint.addResource("translation");
-    translationEndpoint.addMethod(
-      "GET",
-      new apig.LambdaIntegration(translateNovelFn, { proxy: true })
-    );
-    
     // Seed the database
     new custom.AwsCustomResource(this, "enovelsddbInitData", {
       onCreate: {
@@ -211,25 +64,24 @@ export class ENovelApiStack extends cdk.Stack {
         action: "batchWriteItem",
         parameters: {
           RequestItems: {
-            [eNovelsTable.tableName]: generateBatch(novels),
+            [novelApi.novelsTable.tableName]: generateBatch(novels),
           },
         },
         physicalResourceId: custom.PhysicalResourceId.of("enovelsddbInitData"),
       },
       policy: custom.AwsCustomResourcePolicy.fromSdkCalls({
-        resources: [eNovelsTable.tableArn],
+        resources: [novelApi.novelsTable.tableArn],
       }),
-    });
-
-    new cdk.CfnOutput(this, "ApiUrl", {
-      value: api.url,
-      description: "The URL of the deployed API",
     });
 
     new cdk.CfnOutput(this, "ApiKeyValue", {
       value: apiKey.keyId,
-      description: "API Key ID",
+      description: "API Key ID (Use this ID to retrieve the actual key value)",
     });
-    
+
+    new cdk.CfnOutput(this, "ApiUrl", {
+      value: api.url,
+      description: "API Gateway URL",
+    });
   }
 }
